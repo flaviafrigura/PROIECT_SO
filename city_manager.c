@@ -130,10 +130,22 @@ void add_report(char *district,char *role,char *user, double lat,double lon,char
         if(!(st.st_mode&S_IWGRP))
             return;
     }
-    int file=open(path,O_WRONLY|O_APPEND);
+    int file=open(path,O_APPEND|O_RDWR);
+    if(file<0)
+        return;
     report r;
-    srand(time(NULL));
-    r.id=rand()%10000;
+    if(st.st_size==0)
+    {
+        r.id=1;
+    }
+    else
+    {
+        lseek(file,-sizeof(report),SEEK_END);
+        report last;
+        read(file,&last,sizeof(last));
+        r.id=last.id+1;
+    }
+    lseek(file,0,SEEK_END);
     strncpy(r.inspector,user,NAME_LEN);
     r.latitude=lat;
     r.longitude=lon;
@@ -167,6 +179,42 @@ void list_reports(char *district,char *role)
     {
         printf("%d %s %s %d\n",r.id,r.inspector,r.category,r.severity);
     }
+    close(file);
+}
+
+void view_report(char *district,char *role,int id)
+{
+    char path[256];
+    sprintf(path,"%s/reports.dat",district);
+    struct stat st;
+    stat(path,&st);
+    if(strcmp(role,"manager")==0)
+    {
+        if(!(st.st_mode&S_IRUSR))return;
+    }
+    else
+    {
+        if(!(st.st_mode&S_IRGRP))return;
+    }
+    int file=open(path,O_RDONLY);
+    report r;
+    int found=0;
+    while(read(file,&r,sizeof(r))>0)
+    {
+        if(r.id==id)
+        {
+            found=1;
+            printf("ID:%d\n",r.id);
+            printf("Inspector:%s\n",r.inspector);
+            printf("Location:%f %f\n",r.latitude,r.longitude);
+            printf("Category:%s\n",r.category);
+            printf("Severity:%d\n",r.severity);
+            printf("Timestamp:%ld\n",r.timestamp);
+            printf("Description:%s\n",r.description);
+            break;
+        }
+    }
+    if(!found)printf("Report not found\n");
     close(file);
 }
 
@@ -306,6 +354,8 @@ int main(int argc,char *argv[])
         add_report(district,role,user,lat,lon,category,severity,desc);
     else if(!strcmp(cmd,"--list"))
         list_reports(district,role);
+    else if(!strcmp(cmd,"--view"))
+        view_report(district,role,atoi(argv[argc-1]));
     else if(!strcmp(cmd,"--remove_report"))
         remove_report(district,role,atoi(argv[argc-1]));
     else if(!strcmp(cmd,"--update_threshold"))
