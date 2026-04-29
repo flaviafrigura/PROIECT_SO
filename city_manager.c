@@ -324,11 +324,14 @@ void filter_reports(char *district,char conditions[][64],int count)
 
 void remove_district(char *district,char *role)
 {
+
     struct stat st;
+    stat(path,&st);
     if(strcmp(role,"manager")!=0)
         return;
     else
     {
+        printf("%s\n",district);
         if(!(st.st_mode&S_IWUSR))
             return;
     }
@@ -341,6 +344,7 @@ void remove_district(char *district,char *role)
     char link[256];
     sprintf(link,"active_reports-%s",district);
     unlink(link);
+    printf("%s\n",district);
     pid_t pid=fork();
     if(pid<0)
     {
@@ -349,9 +353,11 @@ void remove_district(char *district,char *role)
     }
     if(pid==0)
     {
+
         execlp("rm","rm","-rf",district,NULL);
+
         perror("Exec failed");
-        return;
+        exit(1);
     }
 }
 
