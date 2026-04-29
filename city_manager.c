@@ -264,7 +264,7 @@ void remove_report(char *district,char *role,int id)
     close(file);
 }
 
-void update_threshold(const char *district,const char *role,int value)
+void update_threshold(char *district,char *role,int value)
 {
     struct stat st;
     char path[256];
@@ -289,7 +289,7 @@ void update_threshold(const char *district,const char *role,int value)
     close(file);
 }
 
-void filter_reports(const char *district,char conditions[][64],int count)
+void filter_reports(char *district,char conditions[][64],int count)
 {
     char path[256];
     sprintf(path,"%s/reports.dat",district);
@@ -320,6 +320,41 @@ void filter_reports(const char *district,char conditions[][64],int count)
     }
     close(file);
 }
+
+
+void remove_district(char *district,char *role)
+{
+    struct stat st;
+    if(strcmp(role,"manager")!=0)
+        return;
+    else
+    {
+        if(!(st.st_mode&S_IWUSR))
+            return;
+    }
+    if(district==NULL||strlen(district)==0)
+    {
+        printf("Invalid name\n");
+        return;
+    }
+
+    char link[256];
+    sprintf(link,"active_reports-%s",district);
+    unlink(link);
+    pid_t pid=fork();
+    if(pid<0)
+    {
+        printf("Fork failed\n");
+        return;
+    }
+    if(pid==0)
+    {
+        execlp("rm","rm","-rf",district,NULL);
+        perror("Exec failed");
+        return;
+    }
+}
+
 
 int main(int argc,char *argv[])
 {
@@ -375,5 +410,7 @@ int main(int argc,char *argv[])
         }
         filter_reports(district,conditions,count);
     }
+    else if(!strcmp(cmd,"--remove_district"))
+        remove_district(district,role);
     return 0;
 }
