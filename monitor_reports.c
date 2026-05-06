@@ -7,16 +7,18 @@
 #include <time.h>
 #include <signal.h>
 
-void sigint_handler(int sig)
+void handler(int sig)
 {
-    printf("SIGINT recieved. Terminating.\n");
-    unlink(".monitor_pid");
-    exit(0);
-}
-
-void sigusr_handler(int sig)
-{
-    printf("SIGUSR1 recieved. Adding new report.\n");
+    if(sig==SIGINT)
+    {
+        printf("SIGINT recieved. Terminating.\n");
+        unlink(".monitor_pid");
+        exit(0);
+    }
+    else if(sig==SIGUSR1)
+    {
+        printf("SIGUSR1 recieved. Adding new report.\n");
+    }
 }
 
 int main()
@@ -27,18 +29,15 @@ int main()
         perror("Error with the PID file");
         return 1;
     }
-    printf("cevaceva\n");
     char buffer[32];
     sprintf(buffer,"%d\n",getpid());
     write(file,buffer,strlen(buffer));
     close(file);
-    struct sigaction signalint,signalusr1;
-    memset(&signalint,0,sizeof(signalint));
-    signalint.sa_handler=sigint_handler;
-    sigaction(SIGINT,&signalint,NULL);
-    memset(&signalusr1,0,sizeof(signalusr1));
-    signalusr1.sa_handler=sigusr_handler;
-    sigaction(SIGUSR1,&signalusr1,NULL);
+    struct sigaction signal;
+    memset(&signal,0,sizeof(signal));
+    signal.sa_handler=handler;
+    sigaction(SIGINT,&signal,NULL);
+    sigaction(SIGUSR1,&signal,NULL);
     printf("Monitor is active now. PID is %d\n",getpid());
     while(1)
     {
