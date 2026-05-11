@@ -23,10 +23,24 @@ void handler(int sig)
 
 int main()
 {
-    int file=open(".monitor_pid",O_CREAT|O_WRONLY|O_TRUNC,0644);
+    int file=open(".monitor_pid",O_RDONLY);
+    if(file>=0)
+    {
+        char buffer[32]={0};
+        read(file,buffer,sizeof(buffer)-1);
+        close(file);
+        pid_t existing=(pid_t)atoi(buffer);
+        if((existing>0)&&(kill(existing,0)==0))
+        {
+            printf("Another monitor is already running (PID %d). Exiting.",existing);
+            return 1;
+        }
+        unlink(".monitor_pid");
+    }
+    file=open(".monitor_pid",O_CREAT|O_WRONLY|O_TRUNC,0644);
     if(file<0)
     {
-        perror("Error with the PID file");
+        perror("Problema la crearea/override PID file");
         return 1;
     }
     char buffer[32];
@@ -36,6 +50,8 @@ int main()
     struct sigaction signal;
     memset(&signal,0,sizeof(signal));
     signal.sa_handler=handler;
+    sigemptyset(&signal.sa_mask);
+    signal.sa_flags=0;
     sigaction(SIGINT,&signal,NULL);
     sigaction(SIGUSR1,&signal,NULL);
     printf("Monitor is active now. PID is %d\n",getpid());
