@@ -3,16 +3,14 @@
 #include <string.h>
 #include <unistd.h>
 #include <fcntl.h>
-#include <sys/types.h>
-#include <sys/wait.h>
-
-#define MAX_CMD 256
-#define MAX_BUF 512
+#include <sys/stat.h>
+#include <time.h>
+#include <signal.h>
 
 void start_monitor()
 {
-    int pipefiledescriptors[2];
-    if(pipe(pipefiledescriptors)<0)
+    int filedes[2];
+    if(pipe(filedes)<0)
     {
         perror("Problema creare pipe");
         return;
@@ -33,17 +31,17 @@ void start_monitor()
         }
         if(monitor==0)
         {
-            close(pipefiledescriptors[0]);
-            dup2(pipefiledescriptors[1],STDOUT_FILENO);
-            close(pipefiledescriptors[1]);
+            close(filedes[0]);
+            dup2(filedes[1],STDOUT_FILENO);
+            close(filedes[1]);
             execl("./monitor_reports","monitor_reports",NULL);
             perror("A esuat inlocuirea procesului cu monitor_reports");
             exit(1);
         }
-        close(pipefiledescriptors[1]);
+        close(filedes[1]);
         char buffer[512];
         int n;
-        while((n=read(pipefiledescriptors[0],buffer,sizeof(buffer)-1))>0)
+        while((n=read(filedes[0],buffer,sizeof(buffer)-1))>0)
         {
             buffer[n]='\0';
             printf("MONITOR: %s",buffer);
@@ -52,7 +50,7 @@ void start_monitor()
                 printf("HUB: Monitor ended\n");
             }
         }
-        close(pipefiledescriptors[0]);
+        close(filedes[0]);
         wait(NULL);
         exit(0);
     }
@@ -63,8 +61,8 @@ void calculate_scores(char districts[][],int n)
 {
     for (int i=0;i<n;i++)
     {
-        int pipefiledescriptors[2];
-        if (pipe(pipefiledescriptors)<0)
+        int filedes[2];
+        if (pipe(filedes)<0)
         {
             perror("Problema creare pipe");
             continue;
@@ -77,23 +75,23 @@ void calculate_scores(char districts[][],int n)
         }
         if(scorer==0)
         {
-            close(pipefiledescriptors[0]);
-            dup2(pipefiledescriptors[1],STDOUT_FILENO);
-            close(pipefiledescriptors[1]);
+            close(filedes[0]);
+            dup2(filedes[1],STDOUT_FILENO);
+            close(filedes[1]);
             execl("./scorer", "scorer", districts[i], NULL);
             perror("Problema la execul scorer ului");
             exit(1);
         }
-        close(pipefiledescriptors[1]);
+        close(filedes[1]);
         char buffer[512];
         int n;
         printf("%s\n",districts[i]);
-        while((n=read(pipefiledescriptors[0],buffer,sizeof(buffer)-1))>0)
+        while((n=read(filedes[0],buffer,sizeof(buffer)-1))>0)
         {
             buffer[n]='\0';
             printf("%s",buffer);
         }
-        close(pipefiledescriptors[0]);
+        close(filedes[0]);
         wait(NULL);
     }
 }

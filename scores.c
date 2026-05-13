@@ -1,8 +1,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <fcntl.h>
 #include <unistd.h>
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <time.h>
+#include <signal.h>
 
 #define NAME_LEN 32
 #define CATEGORY_LEN 32
@@ -31,7 +34,7 @@ int main(int argc, char *argv[])
 {
     if(argc!=2)
     {
-        printf("Usage: ./scorer <district>\n");
+        printf("Insuficiente argumente\n");
         return 1;
     }
     char path[256];
@@ -39,13 +42,13 @@ int main(int argc, char *argv[])
     int file=open(path,O_RDONLY);
     if(file<0)
     {
-        perror("open reports.dat");
+        perror("Problema deschidere reports.dat");
         return 1;
     }
     inspector_score inspectors[MAX_INSPECTORS];
     int inspector_count=0;
     report r;
-    while(read(fd,&r,sizeof(report))>0)
+    while(read(file,&r,sizeof(report))>0)
     {
         int found=0;
         for(int i=0;i<inspector_count;i++)
@@ -64,11 +67,11 @@ int main(int argc, char *argv[])
             inspector_count++;
         }
     }
-    close(fd);
+    close(file);
     printf("District: %s\n",argv[1]);
     for(int i=0;i<inspector_count;i++)
     {
-        printf("Inspector: %s | Workload Score: %d\n",inspectors[i].name,inspectors[i].total_score);
+        printf("Inspector: %s | Workload Score %d\n",inspectors[i].name,inspectors[i].total_score);
     }
     return 0;
 }
