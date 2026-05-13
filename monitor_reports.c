@@ -60,4 +60,7 @@ int main()
         pause();
     }
     return 0;
+
+
+    // ma uit daca primul cuvant din terminal e calculate_scores sau start_monitor
 }

@@ -4,6 +4,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <sys/stat.h>
+#include <sys/wait.h>
 #include <time.h>
 #include <signal.h>
 
@@ -57,7 +58,7 @@ void start_monitor()
     printf("Monitor now active\n");
 }
 
-void calculate_scores(char districts[][],int n)
+void calculate_scores(char *districts[],int n)
 {
     for (int i=0;i<n;i++)
     {
