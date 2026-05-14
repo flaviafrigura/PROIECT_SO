@@ -20,6 +20,8 @@ void start_monitor()
     if(hub_mon<0)
     {
         perror("Problema creare proces copil hub_mon");
+        close(filedes[0]);
+        close(filedes[1]);
         return;
     }
     if(hub_mon==0)
@@ -41,29 +43,33 @@ void start_monitor()
         }
         close(filedes[1]);
         char buffer[512];
-        int n;
-        while((n=read(filedes[0],buffer,sizeof(buffer)-1))>0)
+        int bytes_read;
+        while((bytes_read=read(filedes[0],buffer,sizeof(buffer)-1))>0)
         {
-            buffer[n]='\0';
+            buffer[bytes_read]='\0';
             printf("MONITOR: %s",buffer);
-            if(strstr(buffer,"terminated")!=NULL)
+            fflush(stdout);
+            if(strstr(buffer,"TERMINATED:")!=NULL)
             {
                 printf("HUB: Monitor ended\n");
+                fflush(stdout);
             }
         }
         close(filedes[0]);
         wait(NULL);
         exit(0);
     }
+    close(filedes[0]);
+    close(filedes[1]);
     printf("Monitor now active\n");
 }
 
-void calculate_scores(char *districts[],int n)
+void calculate_scores(char *districts[],int count)
 {
-    for (int i=0;i<n;i++)
+    for(int i=0;i<count;i++)
     {
         int filedes[2];
-        if (pipe(filedes)<0)
+        if(pipe(filedes)<0)
         {
             perror("Problema creare pipe");
             continue;
@@ -72,6 +78,8 @@ void calculate_scores(char *districts[],int n)
         if(scorer<0)
         {
             perror("Problema creare proces");
+            close(filedes[0]);
+            close(filedes[1]);
             continue;
         }
         if(scorer==0)
@@ -79,33 +87,34 @@ void calculate_scores(char *districts[],int n)
             close(filedes[0]);
             dup2(filedes[1],STDOUT_FILENO);
             close(filedes[1]);
-            execl("./scorer", "scorer", districts[i], NULL);
-            perror("Problema la execul scorer ului");
+            execl("./scorer","scorer",districts[i],NULL);
+            perror("Problema la execul scorer-ului");
             exit(1);
         }
         close(filedes[1]);
         char buffer[512];
-        int n;
-        printf("%s\n",districts[i]);
-        while((n=read(filedes[0],buffer,sizeof(buffer)-1))>0)
+        int bytes_read;
+        while((bytes_read=read(filedes[0],buffer,sizeof(buffer)-1))>0)
         {
-            buffer[n]='\0';
+            buffer[bytes_read]='\0';
             printf("%s",buffer);
         }
         close(filedes[0]);
-        wait(NULL);
+        waitpid(scorer,NULL,0);
     }
 }
 
 int main()
 {
     char command[512];
-    while (1)
+    while(1)
     {
         printf("city_hub> ");
+        fflush(stdout);
         if(fgets(command,sizeof(command),stdin)==NULL)
             break;
         command[strcspn(command,"\n")]='\0';
+
         if(strcmp(command,"exit")==0)
             break;
         else if(strcmp(command,"start_monitor")==0)
@@ -116,12 +125,15 @@ int main()
             int count=0;
             char *token=strtok(command," ");
             token=strtok(NULL," ");
-            while(token!=NULL)
+            while(token!=NULL&&count<20)
             {
                 districts[count++]=token;
                 token=strtok(NULL," ");
             }
-            calculate_scores(districts,count);
+            if(count==0)
+                printf("Folosire: calculate_scores <district1> [district2] ...\n");
+            else
+                calculate_scores(districts,count);
         }
         else
             printf("Unknown command\n");

@@ -11,13 +11,13 @@ void handler(int sig)
 {
     if(sig==SIGINT)
     {
-        printf("SIGINT recieved. Terminating.\n");
+        printf("TERMINATED: SIGINT recieved. Terminating.\n");
         unlink(".monitor_pid");
         exit(0);
     }
     else if(sig==SIGUSR1)
     {
-        printf("SIGUSR1 recieved. Adding new report.\n");
+        printf("MSG: SIGUSR1 recieved. Adding new report.\n");
     }
 }
 
@@ -32,11 +32,13 @@ int main()
         pid_t existing=(pid_t)atoi(buffer);
         if((existing>0)&&(kill(existing,0)==0))
         {
-            printf("Another monitor is already running (PID %d). Exiting.",existing);
+            printf("MSG:Another monitor is already running (PID %d). Exiting.\n",existing);
+            fflush(stdout);
             return 1;
         }
         unlink(".monitor_pid");
     }
+
     file=open(".monitor_pid",O_CREAT|O_WRONLY|O_TRUNC,0644);
     if(file<0)
     {
@@ -47,20 +49,18 @@ int main()
     sprintf(buffer,"%d\n",getpid());
     write(file,buffer,strlen(buffer));
     close(file);
-    struct sigaction signal;
-    memset(&signal,0,sizeof(signal));
-    signal.sa_handler=handler;
-    sigemptyset(&signal.sa_mask);
-    signal.sa_flags=0;
-    sigaction(SIGINT,&signal,NULL);
-    sigaction(SIGUSR1,&signal,NULL);
-    printf("Monitor is active now. PID is %d\n",getpid());
+    struct sigaction sa;
+    memset(&sa,0,sizeof(sa));
+    sa.sa_handler=handler;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags=0;
+    sigaction(SIGINT,&sa,NULL);
+    sigaction(SIGUSR1,&sa,NULL);
+    printf("MSG:Monitor is active now. PID is %d\n",getpid());
+    fflush(stdout);
     while(1)
     {
         pause();
     }
     return 0;
-
-
-    // ma uit daca primul cuvant din terminal e calculate_scores sau start_monitor
 }

@@ -34,7 +34,7 @@ int main(int argc, char *argv[])
 {
     if(argc!=2)
     {
-        printf("Insuficiente argumente\n");
+        printf("Problema incepere program scorer\n");
         return 1;
     }
     char path[256];
@@ -60,7 +60,7 @@ int main(int argc, char *argv[])
                 break;
             }
         }
-        if(!found)
+        if(!found&&inspector_count<MAX_INSPECTORS)
         {
             strcpy(inspectors[inspector_count].name,r.inspector);
             inspectors[inspector_count].total_score=r.severity;

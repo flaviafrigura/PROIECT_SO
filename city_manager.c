@@ -4,6 +4,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <sys/stat.h>
+#include <sys/wait.h>
 #include <time.h>
 #include <signal.h>
 
@@ -22,6 +23,20 @@ typedef struct
     time_t timestamp;
     char description[DESC_LEN];
 }report;
+
+void mode_to_string(mode_t mode, char *str)
+{
+    str[0]=(mode&S_IRUSR)?'r':'-';
+    str[1]=(mode&S_IWUSR)?'w':'-';
+    str[2]=(mode&S_IXUSR)?'x':'-';
+    str[3]=(mode&S_IRGRP)?'r':'-';
+    str[4]=(mode&S_IWGRP)?'w':'-';
+    str[5]=(mode&S_IXGRP)?'x':'-';
+    str[6]=(mode&S_IROTH)?'r':'-';
+    str[7]=(mode&S_IWOTH)?'w':'-';
+    str[8]=(mode&S_IXOTH)?'x':'-';
+    str[9]='\0';
+}
 
 void create_district(const char *district)
 {
@@ -107,7 +122,7 @@ int match_condition(report *r,const char *field,const char *op,const char *value
         return cmp_int(r->severity,atoi(value),op);
 
     if(strcmp(field,"timestamp")==0)
-        return cmp_int(r->timestamp,atol(value),op);
+        return cmp_int((int)r->timestamp,(int)atol(value),op);
 
     if(strcmp(field,"category")==0)
         return cmp_str(r->category,value,op);
@@ -126,6 +141,7 @@ void notify_monitor(char *district,char *role,char *user)
     int file=open(path,O_WRONLY|O_APPEND);
     if(file<0)
     {
+        if(pidfile>=0) close(pidfile);
         return;
     }
     char message[256];
@@ -141,7 +157,7 @@ void notify_monitor(char *district,char *role,char *user)
     read(pidfile,buffer,sizeof(buffer));
     close(pidfile);
     pid_t pid=atoi(buffer);
-    if (kill(pid,SIGUSR1)==0)
+    if(kill(pid,SIGUSR1)==0)
     {
         sprintf(message,"%ld [%s] %s: Monitor notified successfully\n",timenow,role,user);
     }
@@ -153,23 +169,33 @@ void notify_monitor(char *district,char *role,char *user)
     close(file);
 }
 
-void add_report(char *district,char *role,char *user, double lat,double lon,char *category,int severity,char *desc)
+void add_report(char *district,char *role,char *user,double lat,double lon,char *category,int severity,char *desc)
 {
     struct stat st;
     if(stat(district,&st)<0)
         create_district(district);
     char path[256];
     sprintf(path,"%s/reports.dat",district);
-    stat(path,&st);
+    if(stat(path,&st)<0)
+    {
+        printf("Nu pot accesa reports.dat\n");
+        return;
+    }
     if(strcmp(role,"manager")==0)
     {
         if(!(st.st_mode&S_IWUSR))
+        {
+            printf("Permisiune refuzata: managerul nu are drept de scriere\n");
             return;
+        }
     }
     else
     {
         if(!(st.st_mode&S_IWGRP))
+        {
+            printf("Permisiune refuzata: inspectorul nu are drept de scriere\n");
             return;
+        }
     }
     int file=open(path,O_APPEND|O_RDWR);
     if(file<0)
@@ -188,15 +214,15 @@ void add_report(char *district,char *role,char *user, double lat,double lon,char
     }
     lseek(file,0,SEEK_END);
     strncpy(r.inspector,user,NAME_LEN);
-    r.latitude=lat;
-    r.longitude=lon;
+    r.latitude=(float)lat;
+    r.longitude=(float)lon;
     strncpy(r.category,category,CATEGORY_LEN);
     r.severity=severity;
     r.timestamp=time(NULL);
     strncpy(r.description,desc,DESC_LEN);
     write(file,&r,sizeof(r));
-    notify_monitor(district,role,user);
     close(file);
+    notify_monitor(district,role,user);
 }
 
 void list_reports(char *district,char *role)
@@ -204,18 +230,37 @@ void list_reports(char *district,char *role)
     char path[256];
     sprintf(path,"%s/reports.dat",district);
     struct stat st;
-    stat(path,&st);
+    if(stat(path,&st)<0)
+    {
+        printf("Districtul nu exista sau reports.dat lipseste\n");
+        return;
+    }
     if(strcmp(role,"manager")==0)
     {
         if(!(st.st_mode&S_IRUSR))
+        {
+            printf("Permisiune refuzata: managerul nu are drept de citire\n");
             return;
+        }
     }
     else
     {
         if(!(st.st_mode&S_IRGRP))
+        {
+            printf("Permisiune refuzata: inspectorul nu are drept de citire\n");
             return;
+        }
     }
+    char perm_str[10];
+    mode_to_string(st.st_mode, perm_str);
+    char time_buf[64];
+    strftime(time_buf, sizeof(time_buf), "%Y-%m-%d %H:%M:%S", localtime(&st.st_mtime));
+    printf("Fisier: %s | Permisiuni: %s | Dimensiune: %ld bytes | Ultima modificare: %s\n",
+           path, perm_str, (long)st.st_size, time_buf);
+
     int file=open(path,O_RDONLY);
+    if(file<0)
+        return;
     report r;
     while(read(file,&r,sizeof(r))>0)
     {
@@ -229,16 +274,30 @@ void view_report(char *district,char *role,int id)
     char path[256];
     sprintf(path,"%s/reports.dat",district);
     struct stat st;
-    stat(path,&st);
+    if(stat(path,&st)<0)
+    {
+        printf("Districtul nu exista sau reports.dat lipseste\n");
+        return;
+    }
     if(strcmp(role,"manager")==0)
     {
-        if(!(st.st_mode&S_IRUSR))return;
+        if(!(st.st_mode&S_IRUSR))
+        {
+            printf("Permisiune refuzata: managerul nu are drept de citire\n");
+            return;
+        }
     }
     else
     {
-        if(!(st.st_mode&S_IRGRP))return;
+        if(!(st.st_mode&S_IRGRP))
+        {
+            printf("Permisiune refuzata: inspectorul nu are drept de citire\n");
+            return;
+        }
     }
     int file=open(path,O_RDONLY);
+    if(file<0)
+        return;
     report r;
     int found=0;
     while(read(file,&r,sizeof(r))>0)
@@ -251,7 +310,7 @@ void view_report(char *district,char *role,int id)
             printf("Location:%f %f\n",r.latitude,r.longitude);
             printf("Category:%s\n",r.category);
             printf("Severity:%d\n",r.severity);
-            printf("Timestamp:%ld\n",r.timestamp);
+            printf("Timestamp:%ld\n",(long)r.timestamp);
             printf("Description:%s\n",r.description);
             break;
         }
@@ -262,18 +321,27 @@ void view_report(char *district,char *role,int id)
 
 void remove_report(char *district,char *role,int id)
 {
-    struct stat st;
     if(strcmp(role,"manager")!=0)
-        return;
-    else
     {
-        if(!(st.st_mode&S_IWUSR))
-            return;
+        printf("Permisiune refuzata: doar managerul poate sterge rapoarte\n");
+        return;
     }
     char path[256];
     sprintf(path,"%s/reports.dat",district);
-    stat(path,&st);
+    struct stat st;
+    if(stat(path,&st)<0)
+    {
+        printf("reports.dat nu exista\n");
+        return;
+    }
+    if(!(st.st_mode&S_IWUSR))
+    {
+        printf("Permisiune refuzata: managerul nu are drept de scriere\n");
+        return;
+    }
     int file=open(path,O_RDWR);
+    if(file<0)
+        return;
     report r,next;
     int found=0;
     while(read(file,&r,sizeof(r))>0)
@@ -286,51 +354,86 @@ void remove_report(char *district,char *role,int id)
     }
     if(!found)
     {
+        printf("Report not found\n");
         close(file);
         return;
     }
     while(read(file,&next,sizeof(next))>0)
     {
-        lseek(file,-2*sizeof(report),SEEK_CUR);
+        lseek(file,-2*(off_t)sizeof(report),SEEK_CUR);
         write(file,&next,sizeof(next));
-        lseek(file,sizeof(report),SEEK_CUR);
+        lseek(file,(off_t)sizeof(report),SEEK_CUR);
     }
     struct stat st2;
     fstat(file,&st2);
-    ftruncate(file,st2.st_size-sizeof(report));
+    ftruncate(file,st2.st_size-(off_t)sizeof(report));
     close(file);
 }
 
 void update_threshold(char *district,char *role,int value)
 {
-    struct stat st;
+    if(strcmp(role,"manager")!=0)
+    {
+        printf("Permisiune refuzata: doar managerul poate actualiza pragul\n");
+        return;
+    }
     char path[256];
     sprintf(path,"%s/district.cfg",district);
-    stat(path,&st);
+    struct stat st;
+    if(stat(path,&st)<0)
+    {
+        printf("district.cfg nu exista\n");
+        return;
+    }
     if((st.st_mode&0777)!=0640)
     {
         printf("Config permissions changed\n");
         return;
     }
-    if(strcmp(role,"manager")!=0)
-        return;
-    else
+    if(!(st.st_mode&S_IWUSR))
     {
-        if(!(st.st_mode&S_IWUSR))
-            return;
+        printf("Permisiune refuzata: managerul nu are drept de scriere pe district.cfg\n");
+        return;
     }
     int file=open(path,O_WRONLY|O_TRUNC);
+    if(file<0)
+        return;
     char buf[16];
     sprintf(buf,"%d\n",value);
     write(file,buf,strlen(buf));
     close(file);
 }
 
-void filter_reports(char *district,char conditions[][64],int count)
+void filter_reports(char *district,char *role,char conditions[][64],int count)
 {
     char path[256];
     sprintf(path,"%s/reports.dat",district);
+    struct stat st;
+    if(stat(path,&st)<0)
+    {
+        printf("reports.dat nu exista\n");
+        return;
+    }
+    /* FIX: verificare permisiuni si pentru filter */
+    if(strcmp(role,"manager")==0)
+    {
+        if(!(st.st_mode&S_IRUSR))
+        {
+            printf("Permisiune refuzata: managerul nu are drept de citire\n");
+            return;
+        }
+    }
+    else
+    {
+        if(!(st.st_mode&S_IRGRP))
+        {
+            printf("Permisiune refuzata: inspectorul nu are drept de citire\n");
+            return;
+        }
+    }
     int file=open(path,O_RDONLY);
+    if(file<0)
+        return;
     report r;
     char field[32],op[8],value[64];
     while(read(file,&r,sizeof(r))>0)
@@ -343,7 +446,6 @@ void filter_reports(char *district,char conditions[][64],int count)
                 ok=0;
                 break;
             }
-
             if(!match_condition(&r,field,op,value))
             {
                 ok=0;
@@ -358,30 +460,36 @@ void filter_reports(char *district,char conditions[][64],int count)
     close(file);
 }
 
-
 void remove_district(char *district,char *role)
 {
-
-    struct stat st;
-    char path[256];
-    sprintf(path,"%s/district.cfg",district);
-    stat(path,&st);
     if(strcmp(role,"manager")!=0)
-        return;
-    else
     {
-        if(!(st.st_mode&S_IWUSR))
-            return;
+        printf("Permisiune refuzata: doar managerul poate sterge districtul\n");
+        return;
     }
     if(district==NULL||strlen(district)==0)
     {
         printf("Invalid name\n");
         return;
     }
+    char path[256];
+    sprintf(path,"%s/district.cfg",district);
+    struct stat st;
+    if(stat(path,&st)<0)
+    {
+        printf("Districtul nu exista\n");
+        return;
+    }
+    if(!(st.st_mode&S_IWUSR))
+    {
+        printf("Permisiune refuzata: managerul nu are drept de scriere\n");
+        return;
+    }
 
     char link[256];
     sprintf(link,"active_reports-%s",district);
     unlink(link);
+
     pid_t pid=fork();
     if(pid<0)
     {
@@ -390,13 +498,12 @@ void remove_district(char *district,char *role)
     }
     if(pid==0)
     {
-
         execlp("rm","rm","-rf",district,NULL);
         perror("Exec failed");
         exit(1);
     }
+    waitpid(pid,NULL,0);
 }
-
 
 int main(int argc,char *argv[])
 {
@@ -408,30 +515,34 @@ int main(int argc,char *argv[])
     char category[32]="";
     int severity=0;
     char desc[128]="";
+
     for(int i=1;i<argc;i++)
     {
-        if(!strcmp(argv[i],"--role"))
+        if(!strcmp(argv[i],"--role")&&i+1<argc)
             role=argv[++i];
-        else if(!strcmp(argv[i],"--user"))
+        else if(!strcmp(argv[i],"--user")&&i+1<argc)
             user=argv[++i];
-        else if(!strcmp(argv[i],"--lat"))
+        else if(!strcmp(argv[i],"--lat")&&i+1<argc)
             lat=atof(argv[++i]);
-        else if(!strcmp(argv[i],"--lon"))
+        else if(!strcmp(argv[i],"--lon")&&i+1<argc)
             lon=atof(argv[++i]);
-        else if(!strcmp(argv[i],"--category"))
+        else if(!strcmp(argv[i],"--category")&&i+1<argc)
             strcpy(category,argv[++i]);
-        else if(!strcmp(argv[i],"--severity"))
+        else if(!strcmp(argv[i],"--severity")&&i+1<argc)
             severity=atoi(argv[++i]);
-        else if(!strcmp(argv[i],"--desc"))
+        else if(!strcmp(argv[i],"--desc")&&i+1<argc)
             strcpy(desc,argv[++i]);
-        else if(argv[i][0]=='-')
+        else if(argv[i][0]=='-'&&argv[i][1]=='-'&&i+1<argc)
         {
             cmd=argv[i];
             district=argv[++i];
         }
     }
     if(!role||!user||!cmd||!district)
+    {
+        printf("Argumente insuficiente.\n");
         return 1;
+    }
     if(!strcmp(cmd,"--add"))
         add_report(district,role,user,lat,lon,category,severity,desc);
     else if(!strcmp(cmd,"--list"))
@@ -446,13 +557,30 @@ int main(int argc,char *argv[])
     {
         char conditions[10][64];
         int count=0;
-        for(int i=3;i<argc;i++)
+        int start=0;
+        for(int i=1;i<argc;i++)
         {
+            if(!strcmp(argv[i],"--filter")&&i+1<argc)
+            {
+                start=i+2;
+                break;
+            }
+        }
+        for(int i=start;i<argc&&count<10;i++)
+        {
+            if(argv[i][0]=='-'&&argv[i][1]=='-')
+            {
+                i++;
+                continue;
+            }
             strcpy(conditions[count++],argv[i]);
         }
-        filter_reports(district,conditions,count);
+        filter_reports(district,role,conditions,count);
     }
     else if(!strcmp(cmd,"--remove_district"))
         remove_district(district,role);
+    else
+        printf("Comanda necunoscuta: %s\n",cmd);
+
     return 0;
 }
